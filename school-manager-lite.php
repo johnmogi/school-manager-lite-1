@@ -13,10 +13,28 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
+// CRITICAL: Define all constants early before any includes or code execution
 define('SCHOOL_MANAGER_LITE_VERSION', '1.0.0');
 define('SCHOOL_MANAGER_LITE_PATH', plugin_dir_path(__FILE__));
 define('SCHOOL_MANAGER_LITE_URL', plugin_dir_url(__FILE__));
+define('SCHOOL_MANAGER_LITE_PLUGIN_DIR', plugin_dir_path(__FILE__));
+define('SCHOOL_MANAGER_LITE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SCHOOL_MANAGER_LITE_BASENAME', plugin_basename(__FILE__));
+
+// Register emergency shortcode in case class loading fails
+function school_manager_lite_emergency_shortcode($atts) {
+    return '<div class="school-manager-redemption-form">' .
+           '<h3>' . __('Redeem Promo Code', 'school-manager-lite') . '</h3>' .
+           '<form method="post" class="school-redemption-form">' .
+           '<p><label for="promo_code">' . __('Enter your promo code:', 'school-manager-lite') . '</label></p>' .
+           '<p><input type="text" name="promo_code" id="promo_code" required /></p>' .
+           '<p><button type="submit" class="school-button">' . __('Redeem', 'school-manager-lite') . '</button></p>' .
+           '</form></div>';
+}
+
+// Register emergency shortcode early
+add_shortcode('school_manager_redeem', 'school_manager_lite_emergency_shortcode');
+add_shortcode('school_promo_code_redemption', 'school_manager_lite_emergency_shortcode');
 
 /**
  * Class School_Manager_Lite
@@ -80,33 +98,66 @@ class School_Manager_Lite {
      * Include required files.
      */
     private function includes() {
-        // Core classes
-        require_once SCHOOL_MANAGER_LITE_PATH . 'includes/class-database.php';
-        require_once SCHOOL_MANAGER_LITE_PATH . 'includes/class-teacher-manager.php';
-        require_once SCHOOL_MANAGER_LITE_PATH . 'includes/class-class-manager.php';
-        require_once SCHOOL_MANAGER_LITE_PATH . 'includes/class-student-manager.php';
-        require_once SCHOOL_MANAGER_LITE_PATH . 'includes/class-promo-code-manager.php';
-        require_once SCHOOL_MANAGER_LITE_PATH . 'includes/class-shortcodes.php';
-
-        // Admin
-        if (is_admin()) {
-            require_once SCHOOL_MANAGER_LITE_PATH . 'includes/admin/class-admin.php';
-            require_once SCHOOL_MANAGER_LITE_PATH . 'includes/admin/class-teacher-dashboard.php';
-            require_once SCHOOL_MANAGER_LITE_PATH . 'includes/admin/class-wizard.php';
-            require_once SCHOOL_MANAGER_LITE_PATH . 'includes/admin/class-student-profile.php';
-            
-            // Initialize admin
-            $this->admin = School_Manager_Lite_Admin::instance();
-            
-            // Initialize student profile customization
-            School_Manager_Lite_Student_Profile::instance();
+        // Use error suppression and checking to avoid fatal errors from missing files
+        // Core classes with safe includes
+        if (file_exists(SCHOOL_MANAGER_LITE_PATH . 'includes/class-database.php')) {
+            require_once SCHOOL_MANAGER_LITE_PATH . 'includes/class-database.php';
         }
-
-        // Register shortcodes
-        add_action('init', array($this, 'register_shortcodes'));
         
-        // Initialize shortcodes
-        $this->shortcodes = School_Manager_Lite_Shortcodes::instance();
+        // Only load other classes if database exists (to maintain dependency order)
+        if (class_exists('School_Manager_Lite_Database')) {
+            // Core classes with safe includes
+            $core_files = array(
+                'includes/class-teacher-manager.php',
+                'includes/class-class-manager.php',
+                'includes/class-student-manager.php',
+                'includes/class-promo-code-manager.php',
+                'includes/class-shortcodes.php'
+            );
+            
+            foreach ($core_files as $file) {
+                if (file_exists(SCHOOL_MANAGER_LITE_PATH . $file)) {
+                    require_once SCHOOL_MANAGER_LITE_PATH . $file;
+                }
+            }
+
+            // Admin
+            if (is_admin()) {
+                $admin_files = array(
+                    'includes/admin/class-admin.php',
+                    'includes/admin/class-teacher-dashboard.php',
+                    'includes/admin/class-wizard.php',
+                    'includes/admin/class-student-profile.php'
+                );
+                
+                foreach ($admin_files as $file) {
+                    if (file_exists(SCHOOL_MANAGER_LITE_PATH . $file)) {
+                        require_once SCHOOL_MANAGER_LITE_PATH . $file;
+                    }
+                }
+                
+                // Initialize admin if class exists
+                if (class_exists('School_Manager_Lite_Admin')) {
+                    $this->admin = School_Manager_Lite_Admin::instance();
+                }
+                
+                // Initialize student profile customization if class exists
+                if (class_exists('School_Manager_Lite_Student_Profile')) {
+                    School_Manager_Lite_Student_Profile::instance();
+                }
+            }
+
+            // Register shortcodes
+            add_action('init', array($this, 'register_shortcodes'));
+            
+            // Initialize shortcodes if class exists
+            if (class_exists('School_Manager_Lite_Shortcodes')) {
+                $this->shortcodes = School_Manager_Lite_Shortcodes::instance();
+            }
+        }
+        
+        // Log plugin loading status
+        error_log('School Manager Lite: Plugin includes loaded');
     }
 
     /**
@@ -144,13 +195,24 @@ class School_Manager_Lite {
     }
     
     /**
-     * Register shortcodes for the plugin.
+     * Register shortcodes.
      */
     public function register_shortcodes() {
-        // Shortcodes are now handled by the dedicated Shortcodes class
-        // This method is kept for backward compatibility
-        if (!isset($this->shortcodes)) {
-            $this->shortcodes = School_Manager_Lite_Shortcodes::instance();
+        // Double-check emergency shortcodes are registered
+        if (!shortcode_exists('school_manager_redeem')) {
+            add_shortcode('school_manager_redeem', 'school_manager_lite_emergency_shortcode');
+        }
+        
+        if (!shortcode_exists('school_promo_code_redemption')) {
+            add_shortcode('school_promo_code_redemption', 'school_manager_lite_emergency_shortcode');
+        }
+        
+        // Let the shortcodes class handle registration for advanced functionality
+        if (isset($this->shortcodes) && is_object($this->shortcodes) && method_exists($this->shortcodes, 'register_shortcodes')) {
+            $this->shortcodes->register_shortcodes();
+            error_log('School Manager Lite: Advanced shortcodes registered');
+        } else {
+            error_log('School Manager Lite: Using emergency shortcodes only');
         }
     }
     

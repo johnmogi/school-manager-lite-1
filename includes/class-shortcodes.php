@@ -33,7 +33,7 @@ class School_Manager_Lite_Shortcodes {
      */
     public function __construct() {
         // Register shortcodes
-        add_shortcode('school_promo_code_redemption', array($this, 'promo_code_redemption_shortcode'));
+        $this->register_shortcodes();
         
         // Add AJAX handlers for frontend actions
         add_action('wp_ajax_school_redeem_promo_code', array($this, 'ajax_redeem_promo_code'));
@@ -41,6 +41,19 @@ class School_Manager_Lite_Shortcodes {
         
         // Register frontend scripts
         add_action('wp_enqueue_scripts', array($this, 'register_frontend_scripts'));
+    }
+    
+    /**
+     * Register shortcodes.
+     */
+    public function register_shortcodes() {
+        // Register both the primary shortcode and its alias
+        add_shortcode('school_promo_code_redemption', array($this, 'promo_code_redemption_shortcode'));
+        // Ensure the school_manager_redeem shortcode is registered as an alias
+        add_shortcode('school_manager_redeem', array($this, 'promo_code_redemption_shortcode'));
+        
+        // Log successful shortcode registration
+        error_log('School Manager Lite: Class-based shortcodes registered successfully');
     }
 
     /**
