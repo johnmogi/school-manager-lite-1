@@ -112,7 +112,8 @@ class School_Manager_Lite {
                 'includes/class-class-manager.php',
                 'includes/class-student-manager.php',
                 'includes/class-promo-code-manager.php',
-                'includes/class-shortcodes.php'
+                'includes/class-shortcodes.php',
+                'includes/class-import-export.php'
             );
             
             foreach ($core_files as $file) {

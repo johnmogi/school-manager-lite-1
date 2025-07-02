@@ -40,7 +40,11 @@ class School_Manager_Lite_Teacher_Manager {
      * Initialize.
      */
     public function init() {
-        // Nothing to initialize yet
+        // Add dashboard widget for teachers
+        add_action('wp_dashboard_setup', array($this, 'add_teacher_dashboard_widgets'));
+        
+        // Add menu items for teachers
+        add_action('admin_menu', array($this, 'add_teacher_menu_items'));
     }
 
     /**
@@ -397,6 +401,231 @@ class School_Manager_Lite_Teacher_Manager {
      * @param int $teacher_id Teacher ID
      * @return bool True on success, false on failure
      */
+    /**
+     * Add dashboard widgets for teachers
+     */
+    public function add_teacher_dashboard_widgets() {
+        // Only show for teachers
+        if (!current_user_can('school_teacher') && !current_user_can('manage_options')) {
+            return;
+        }
+        
+        wp_add_dashboard_widget(
+            'school_manager_teacher_classes',
+            __('My Classes', 'school-manager-lite'),
+            array($this, 'display_teacher_classes_widget')
+        );
+        
+        wp_add_dashboard_widget(
+            'school_manager_teacher_students',
+            __('My Students', 'school-manager-lite'),
+            array($this, 'display_teacher_students_widget')
+        );
+    }
+    
+    /**
+     * Display teacher classes widget
+     */
+    public function display_teacher_classes_widget() {
+        $current_user_id = get_current_user_id();
+        $classes = $this->get_teacher_classes($current_user_id);
+        
+        if (empty($classes)) {
+            echo '<p>' . __('You have no classes assigned.', 'school-manager-lite') . '</p>';
+            return;
+        }
+        
+        echo '<ul>';
+        foreach ($classes as $class) {
+            echo '<li><strong>' . esc_html($class->name) . '</strong>: ' . esc_html($class->description) . '</li>';
+        }
+        echo '</ul>';
+    }
+    
+    /**
+     * Display teacher students widget
+     */
+    public function display_teacher_students_widget() {
+        $current_user_id = get_current_user_id();
+        
+        // Get classes for this teacher
+        $classes = $this->get_teacher_classes($current_user_id);
+        
+        if (empty($classes)) {
+            echo '<p>' . __('You have no students assigned.', 'school-manager-lite') . '</p>';
+            return;
+        }
+        
+        // Get students for each class
+        $student_manager = School_Manager_Lite_Student_Manager::instance();
+        $all_students = array();
+        
+        foreach ($classes as $class) {
+            $students = $student_manager->get_students(array('class_id' => $class->id));
+            if (!empty($students)) {
+                foreach ($students as $student) {
+                    $all_students[] = array(
+                        'id' => $student->id,
+                        'name' => $student->name,
+                        'email' => $student->email,
+                        'class' => $class->name
+                    );
+                }
+            }
+        }
+        
+        if (empty($all_students)) {
+            echo '<p>' . __('You have no students in your classes.', 'school-manager-lite') . '</p>';
+            return;
+        }
+        
+        echo '<table class="widefat fixed" style="margin-bottom:1em;">';
+        echo '<thead><tr>';
+        echo '<th>' . __('Name', 'school-manager-lite') . '</th>';
+        echo '<th>' . __('Email', 'school-manager-lite') . '</th>';
+        echo '<th>' . __('Class', 'school-manager-lite') . '</th>';
+        echo '</tr></thead>';
+        
+        echo '<tbody>';
+        foreach ($all_students as $student) {
+            echo '<tr>';
+            echo '<td>' . esc_html($student['name']) . '</td>';
+            echo '<td>' . esc_html($student['email']) . '</td>';
+            echo '<td>' . esc_html($student['class']) . '</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+    }
+    
+    /**
+     * Add menu items for teachers
+     */
+    public function add_teacher_menu_items() {
+        // Only show for teachers
+        if (!current_user_can('school_teacher') && !current_user_can('manage_options')) {
+            return;
+        }
+        
+        add_menu_page(
+            __('My Classes', 'school-manager-lite'),
+            __('My Classes', 'school-manager-lite'),
+            'school_teacher',
+            'my-classes',
+            array($this, 'render_my_classes_page'),
+            'dashicons-groups',
+            30
+        );
+        
+        add_submenu_page(
+            'my-classes',
+            __('My Students', 'school-manager-lite'),
+            __('My Students', 'school-manager-lite'),
+            'school_teacher',
+            'my-students',
+            array($this, 'render_my_students_page')
+        );
+    }
+    
+    /**
+     * Render my classes page
+     */
+    public function render_my_classes_page() {
+        global $wpdb;
+        
+        echo '<div class="wrap">';
+        echo '<h1>' . __('My Classes', 'school-manager-lite') . '</h1>';
+        
+        $current_user_id = get_current_user_id();
+        $classes = $this->get_teacher_classes($current_user_id);
+        
+        if (empty($classes)) {
+            echo '<p>' . __('You have no classes assigned.', 'school-manager-lite') . '</p>';
+        } else {
+            echo '<table class="widefat fixed" style="margin-top:1em;">';
+            echo '<thead><tr>';
+            echo '<th>' . __('Class Name', 'school-manager-lite') . '</th>';
+            echo '<th>' . __('Description', 'school-manager-lite') . '</th>';
+            echo '<th>' . __('Students', 'school-manager-lite') . '</th>';
+            echo '</tr></thead>';
+            
+            echo '<tbody>';
+            $student_manager = School_Manager_Lite_Student_Manager::instance();
+            foreach ($classes as $class) {
+                $student_count = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}school_students WHERE class_id = %d", $class->id));
+                
+                echo '<tr>';
+                echo '<td>' . esc_html($class->name) . '</td>';
+                echo '<td>' . esc_html($class->description) . '</td>';
+                echo '<td>' . intval($student_count) . '</td>';
+                echo '</tr>';
+            }
+            echo '</tbody></table>';
+        }
+        
+        echo '</div>';
+    }
+    
+    /**
+     * Render my students page
+     */
+    public function render_my_students_page() {
+        echo '<div class="wrap">';
+        echo '<h1>' . __('My Students', 'school-manager-lite') . '</h1>';
+        
+        $current_user_id = get_current_user_id();
+        
+        // Get classes for this teacher
+        $classes = $this->get_teacher_classes($current_user_id);
+        
+        if (empty($classes)) {
+            echo '<p>' . __('You have no students assigned.', 'school-manager-lite') . '</p>';
+        } else {
+            // Get students for each class
+            $student_manager = School_Manager_Lite_Student_Manager::instance();
+            $all_students = array();
+            
+            foreach ($classes as $class) {
+                $students = $student_manager->get_students(array('class_id' => $class->id));
+                if (!empty($students)) {
+                    foreach ($students as $student) {
+                        $all_students[] = array(
+                            'id' => $student->id,
+                            'name' => $student->name,
+                            'email' => $student->email,
+                            'class' => $class->name,
+                            'status' => isset($student->status) ? $student->status : 'active'
+                        );
+                    }
+                }
+            }
+            
+            if (empty($all_students)) {
+                echo '<p>' . __('You have no students in your classes.', 'school-manager-lite') . '</p>';
+            } else {
+                echo '<table class="widefat fixed" style="margin-top:1em;">';
+                echo '<thead><tr>';
+                echo '<th>' . __('Name', 'school-manager-lite') . '</th>';
+                echo '<th>' . __('Email', 'school-manager-lite') . '</th>';
+                echo '<th>' . __('Class', 'school-manager-lite') . '</th>';
+                echo '<th>' . __('Status', 'school-manager-lite') . '</th>';
+                echo '</tr></thead>';
+                
+                echo '<tbody>';
+                foreach ($all_students as $student) {
+                    echo '<tr>';
+                    echo '<td>' . esc_html($student['name']) . '</td>';
+                    echo '<td>' . esc_html($student['email']) . '</td>';
+                    echo '<td>' . esc_html($student['class']) . '</td>';
+                    echo '<td>' . esc_html($student['status']) . '</td>';
+                    echo '</tr>';
+                }
+                echo '</tbody></table>';
+            }
+        }
+        
+        echo '</div>';
+    }
+
     public function assign_student_to_teacher($student_id, $teacher_id) {
         $student = get_user_by('id', $student_id);
         $teacher = $this->get_teacher($teacher_id);

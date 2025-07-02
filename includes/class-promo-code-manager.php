@@ -548,6 +548,23 @@ class School_Manager_Lite_Promo_Code_Manager {
             return new WP_Error('code_limit_reached', __('This promo code has reached its usage limit', 'school-manager-lite'));
         }
         
+        // Check if code is already used (for single-use codes)
+        if ($promo->usage_limit == 1 && $promo->used_count > 0) {
+            return new WP_Error('code_already_used', __('This promo code has already been used', 'school-manager-lite'));
+        }
+        
+        // Check if student_id is already linked to a promo code
+        if (!empty($student_data['username'])) {
+            $existing_user = get_user_by('login', $student_data['username']);
+            if ($existing_user) {
+                // Check if this user already has a promo code
+                $existing_promo = $this->get_user_promo_code($existing_user->ID);
+                if ($existing_promo) {
+                    return new WP_Error('user_has_promo', __('This student already has a promo code assigned', 'school-manager-lite'));
+                }
+            }
+        }
+        
         // Check if code is expired
         if (!empty($promo->expiry_date) && strtotime($promo->expiry_date) < time()) {
             return new WP_Error('code_expired', __('This promo code has expired', 'school-manager-lite'));
@@ -578,21 +595,49 @@ class School_Manager_Lite_Promo_Code_Manager {
         // If student data is provided, create a new student
         else if (!empty($student_data)) {
             // Make sure required fields are provided
-            if (empty($student_data['name']) || empty($student_data['email'])) {
-                return new WP_Error('missing_student_data', __('Student name and email are required', 'school-manager-lite'));
+            if (empty($student_data['student_name']) || empty($student_data['username']) || empty($student_data['password'])) {
+                return new WP_Error('missing_student_data', __('Student name, phone number (username), and ID (password) are required', 'school-manager-lite'));
+            }
+            
+            // Check if student ID (password) already exists to prevent duplicates
+            $existing_user = get_users([
+                'meta_key' => '_school_student_id',
+                'meta_value' => $student_data['password'],
+                'number' => 1,
+                'count_total' => false
+            ]);
+            
+            if (!empty($existing_user)) {
+                return new WP_Error('duplicate_student_id', __('A student with this ID already exists. Please use a different ID.', 'school-manager-lite'));
             }
             
             // Add class ID from promo code
             $student_data['class_id'] = $promo->class_id;
             
+            // Create basic student data with phone as username and ID as password
+            $new_student_data = array(
+                'name' => $student_data['student_name'],
+                'user_login' => $student_data['username'], // Phone number as username
+                'user_pass' => $student_data['password'],  // ID as password
+                'role' => 'student_private',
+                'class_id' => $promo->class_id,
+                'create_user' => true,  // Ensure WordPress user is created
+                'status' => 'active'     // Ensure student is created as active
+            );
+            
+            // Log attempt to create student
+            error_log('School Manager Lite: Attempting to create student with username: ' . $student_data['username']);
+            
             // Create student
             $student_manager = School_Manager_Lite_Student_Manager::instance();
-            $student_id = $student_manager->create_student($student_data);
+            $student_id = $student_manager->create_student($new_student_data);
             
             if (is_wp_error($student_id)) {
+                error_log('School Manager Lite: Error creating student: ' . $student_id->get_error_message());
                 return $student_id; // Return the error
             }
             
+            error_log('School Manager Lite: Student created with ID: ' . $student_id);
             $update_data['student_id'] = $student_id;
         }
         

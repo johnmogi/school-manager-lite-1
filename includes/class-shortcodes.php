@@ -86,8 +86,8 @@ class School_Manager_Lite_Shortcodes {
         // Parse attributes
         $atts = shortcode_atts(
             array(
-                'title' => __('Redeem Your Promo Code', 'school-manager-lite'),
-                'button_text' => __('Redeem Code', 'school-manager-lite'),
+                'title' => __('', 'school-manager-lite'),
+                'button_text' => __('הפעל מנוי', 'school-manager-lite'),
                 'redirect' => '',
                 'class' => 'school-promo-redemption',
             ),
@@ -161,8 +161,13 @@ class School_Manager_Lite_Shortcodes {
                 </div>
                 
                 <div class="school-form-group">
-                    <label for="student_email"><?php _e('Your Email:', 'school-manager-lite'); ?></label>
-                    <input type="email" name="student_email" id="student_email" class="school-form-control" placeholder="<?php _e('Email Address', 'school-manager-lite'); ?>" required>
+                    <label for="student_phone"><?php _e('Your Phone Number:', 'school-manager-lite'); ?></label>
+                    <input type="text" name="student_phone" id="student_phone" class="school-form-control" placeholder="<?php _e('Phone Number (Username)', 'school-manager-lite'); ?>" required>
+                </div>
+                
+                <div class="school-form-group">
+                    <label for="student_id"><?php _e('Your ID:', 'school-manager-lite'); ?></label>
+                    <input type="text" name="student_id" id="student_id" class="school-form-control" placeholder="<?php _e('ID Number (Password)', 'school-manager-lite'); ?>" required>
                 </div>
                 
                 <div class="school-form-submit">
@@ -193,10 +198,11 @@ class School_Manager_Lite_Shortcodes {
         // Get form data
         $promo_code = isset($_POST['promo_code']) ? sanitize_text_field($_POST['promo_code']) : '';
         $student_name = isset($_POST['student_name']) ? sanitize_text_field($_POST['student_name']) : '';
-        $student_email = isset($_POST['student_email']) ? sanitize_email($_POST['student_email']) : '';
+        $student_phone = isset($_POST['student_phone']) ? sanitize_text_field($_POST['student_phone']) : ''; // Phone number used as username
+        $student_id = isset($_POST['student_id']) ? sanitize_text_field($_POST['student_id']) : ''; // ID used as password
         
         // Validate required fields
-        if (empty($promo_code) || empty($student_name) || empty($student_email)) {
+        if (empty($promo_code) || empty($student_name) || empty($student_phone) || empty($student_id)) {
             wp_send_json_error(array('message' => __('All fields are required.', 'school-manager-lite')));
         }
         
@@ -204,9 +210,11 @@ class School_Manager_Lite_Shortcodes {
         $promo_code_manager = School_Manager_Lite_Promo_Code_Manager::instance();
         
         // Try to redeem the promo code
-        $result = $promo_code_manager->redeem_promo_code($promo_code, array(
+        $result = $promo_code_manager->redeem_promo_code($promo_code, null, array(
             'student_name' => $student_name,
-            'student_email' => $student_email,
+            'username' => $student_phone,  // Phone number used as username
+            'password' => $student_id,     // ID used as password
+            'user_login' => $student_phone // Explicitly set user_login to phone number
         ));
         
         if (is_wp_error($result)) {

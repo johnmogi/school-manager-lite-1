@@ -211,7 +211,9 @@ class School_Manager_Lite_Import_Export {
     }
     
     /**
-     * Generate sample CSV for import
+     * Generate and download a sample CSV file
+     * 
+     * @param string $type Type of sample CSV to generate (students, teachers, classes, promo-codes)
      */
     public function generate_sample_csv($type) {
         $filename = 'sample-' . $type . '.csv';
@@ -220,9 +222,9 @@ class School_Manager_Lite_Import_Export {
         switch ($type) {
             case 'students':
                 $sample_data = array(
-                    array('ID', 'Name', 'Email', 'Class ID', 'Registration Date', 'Status'),
-                    array('', 'John Doe', 'john@example.com', '1', date('Y-m-d H:i:s'), 'active'),
-                    array('', 'Jane Smith', 'jane@example.com', '1', date('Y-m-d H:i:s'), 'active')
+                    array('ID', 'Name', 'Username', 'Password', 'Email', 'Class ID', 'Status'),
+                    array('', 'John Doe', '5551234567', 'S12345', 'john@example.com', '1', 'active'),
+                    array('', 'Jane Smith', '5559876543', 'S67890', 'jane@example.com', '1', 'active')
                 );
                 break;
             case 'teachers':
@@ -246,6 +248,8 @@ class School_Manager_Lite_Import_Export {
                     array('SCI2023', '2', date('Y-m-d', strtotime('+1 year')), '1', '0', 'active')
                 );
                 break;
+            default:
+                wp_die(__('Invalid CSV type', 'school-manager-lite'));
         }
         
         // Generate CSV content

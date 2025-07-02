@@ -272,12 +272,15 @@ class School_Manager_Lite_Student_Manager {
         global $wpdb;
         
         $defaults = array(
-            'wp_user_id' => 0, // Existing WordPress user ID
-            'class_id' => 0,
+            'wp_user_id' => 0,
             'name' => '',
             'email' => '',
-            'create_user' => false, // Whether to create a WordPress user
-            'password' => '', // Password for new user
+            'class_id' => 0,
+            'status' => 'active',
+            'created_at' => current_time('mysql'),
+            'create_user' => false,
+            'user_pass' => '',
+            'user_login' => '',
             'send_credentials' => false, // Send email with login credentials
         );
 
@@ -302,12 +305,16 @@ class School_Manager_Lite_Student_Manager {
 
         // Create WordPress user if needed
         if ($data['create_user'] && empty($data['wp_user_id'])) {
-            if (empty($data['email'])) {
-                return new WP_Error('missing_email', __('Email is required to create a user account', 'school-manager-lite'));
+            // Use provided user_login (phone) if available, otherwise use email or fallback
+            if (!empty($data['user_login'])) {
+                $username = sanitize_user($data['user_login'], true);
+            } else if (!empty($data['email'])) {
+                // Generate username from email as fallback
+                $username = sanitize_user(current(explode('@', $data['email'])), true);
+            } else {
+                // Generate a random username if nothing provided
+                $username = 'student_' . wp_generate_password(6, false, false);
             }
-            
-            // Generate username from email
-            $username = sanitize_user(current(explode('@', $data['email'])), true);
             
             // Make sure username is unique
             $i = 1;
@@ -317,17 +324,21 @@ class School_Manager_Lite_Student_Manager {
                 $i++;
             }
             
-            // Generate password if not provided
-            $password = !empty($data['password']) ? $data['password'] : wp_generate_password(12, true, true);
+            // Use provided password or generate one
+            $password = !empty($data['user_pass']) ? $data['user_pass'] : wp_generate_password(12, true, true);
             
-            // Create user
+            // Create user with minimal required info
             $user_data = array(
                 'user_login' => $username,
                 'user_pass' => $password,
-                'user_email' => $data['email'],
                 'display_name' => $data['name'],
                 'role' => 'student_private',
             );
+            
+            // Add email if available (not required)
+            if (!empty($data['email'])) {
+                $user_data['user_email'] = $data['email'];
+            }
             
             $user_id = wp_insert_user($user_data);
             
@@ -573,6 +584,75 @@ class School_Manager_Lite_Student_Manager {
         $results = $wpdb->get_results($query);
         
         return is_array($results) ? $results : array();
+    }
+    
+    /**
+     * Assign a student to a class
+     *
+     * @param int $student_id WordPress user ID of the student
+     * @param int $class_id Class ID to assign the student to
+     * @return bool True on success, false on failure
+     */
+    public function assign_student_to_class($student_id, $class_id) {
+        global $wpdb;
+        
+        // Validate inputs
+        if (empty($student_id) || empty($class_id)) {
+            return false;
+        }
+        
+        // Get or create student record
+        $student = $this->get_student_by_user_id($student_id, 0, true);
+        if (!$student) {
+            // If student record doesn't exist and couldn't be created automatically, try to create it manually
+            $wp_user = get_user_by('id', $student_id);
+            if (!$wp_user) {
+                return false; // User doesn't exist in WordPress
+            }
+            
+            // Create basic student record
+            $student_data = array(
+                'wp_user_id' => $student_id,
+                'name' => $wp_user->display_name,
+                'email' => $wp_user->user_email,
+                'status' => 'active',
+            );
+            
+            $result = $this->create_student($student_data);
+            if (is_wp_error($result)) {
+                return false;
+            }
+            
+            $student = $this->get_student($result);
+            if (!$student) {
+                return false;
+            }
+        }
+        
+        // Check if the class exists
+        $class_manager = School_Manager_Lite_Class_Manager::instance();
+        $class = $class_manager->get_class($class_id);
+        if (!$class) {
+            return false;
+        }
+        
+        // Update the student's class_id
+        $table_name = $wpdb->prefix . 'school_students';
+        $result = $wpdb->update(
+            $table_name,
+            array('class_id' => $class_id),
+            array('id' => $student->id),
+            array('%d'),
+            array('%d')
+        );
+        
+        if ($result !== false) {
+            // Fire action after assignment
+            do_action('school_manager_lite_after_assign_student_to_class', $student_id, $class_id, $student->id);
+            return true;
+        }
+        
+        return false;
     }
     
     /**

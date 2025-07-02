@@ -30,7 +30,8 @@
             // Get form data
             const promoCode = $('#promo_code').val().trim();
             const studentName = $('#student_name').val().trim();
-            const studentEmail = $('#student_email').val().trim();
+            const studentPhone = $('#student_phone').val().trim();
+            const studentId = $('#student_id').val().trim();
             
             // Basic validation
             if (!promoCode) {
@@ -38,7 +39,7 @@
                 return;
             }
             
-            if (!studentName || !studentEmail) {
+            if (!studentName || !studentPhone || !studentId) {
                 showMessage(school_manager_lite.i18n.all_fields_required, 'error');
                 return;
             }
@@ -56,7 +57,8 @@
                     action: 'school_redeem_promo_code',
                     promo_code: promoCode,
                     student_name: studentName,
-                    student_email: studentEmail,
+                    student_phone: studentPhone,
+                    student_id: studentId,
                     nonce: school_manager_lite.nonce
                 },
                 success: function(response) {

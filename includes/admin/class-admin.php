@@ -41,8 +41,9 @@ class School_Manager_Lite_Admin {
         // Handle admin actions
         add_action('admin_init', array($this, 'handle_admin_actions'));
         
-        // AJAX handler for sample CSV download
+        // Admin AJAX handlers
         add_action('wp_ajax_download_sample_csv', array($this, 'handle_download_sample_csv'));
+        add_action('wp_ajax_quick_edit_student', array($this, 'handle_quick_edit_student'));
     }
 
     /**
@@ -262,7 +263,56 @@ class School_Manager_Lite_Admin {
      * Render the import/export page
      */
     public function render_import_export_page() {
+        // Make sure Import/Export class is loaded
+        if (!class_exists('School_Manager_Lite_Import_Export')) {
+            require_once SCHOOL_MANAGER_LITE_PATH . 'includes/class-import-export.php';
+        }
+        
+        // Initialize Import/Export handler
+        $import_export = School_Manager_Lite_Import_Export::instance();
+        
+        // Include template
         require_once SCHOOL_MANAGER_LITE_PLUGIN_DIR . 'templates/admin/admin-import-export.php';
+    }
+    
+    /**
+     * Handle quick edit AJAX requests for students
+     */
+    public function handle_quick_edit_student() {
+        // Verify nonce
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'school_manager_quick_edit_nonce')) {
+            wp_send_json_error(array('message' => __('Security check failed', 'school-manager-lite')));
+        }
+        
+        // Check permissions
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('You do not have permission to perform this action', 'school-manager-lite')));
+        }
+        
+        // Get parameters
+        $student_id = isset($_POST['student_id']) ? intval($_POST['student_id']) : 0;
+        $class_id = isset($_POST['class_id']) ? intval($_POST['class_id']) : 0;
+        $status = isset($_POST['status']) ? sanitize_text_field($_POST['status']) : 'active';
+        
+        if (empty($student_id)) {
+            wp_send_json_error(array('message' => __('Invalid student ID', 'school-manager-lite')));
+        }
+        
+        // Get student manager
+        $student_manager = School_Manager_Lite_Student_Manager::instance();
+        
+        // Update student
+        $result = $student_manager->update_student($student_id, array(
+            'class_id' => $class_id,
+            'status' => $status
+        ));
+        
+        // Handle result
+        if (is_wp_error($result)) {
+            wp_send_json_error(array('message' => $result->get_error_message()));
+        } else {
+            wp_send_json_success(array('message' => __('Student updated successfully', 'school-manager-lite')));
+        }
     }
 
     /**
@@ -446,10 +496,31 @@ class School_Manager_Lite_Admin {
             wp_send_json_error(array('message' => __('Invalid student.', 'school-manager-lite')));
         }
         
-        // Get current student data from our custom table
-        $student = $student_manager->get_student_by_user_id($student_id);
+        // Get current student data from our custom table, and create it if it doesn't exist
+        $student = $student_manager->get_student_by_user_id($student_id, 0, true);
         if (!$student) {
-            wp_send_json_error(array('message' => __('Student not found in school system.', 'school-manager-lite')));
+            // Create a new student record in the custom table if possible
+            $wp_user = get_user_by('id', $student_id);
+            if ($wp_user) {
+                // Create basic student record
+                $new_student_data = array(
+                    'wp_user_id' => $student_id,
+                    'name' => $wp_user->display_name,
+                    'email' => $wp_user->user_email,
+                    'status' => 'active',
+                );
+                
+                $student_id_in_table = $student_manager->create_student($new_student_data);
+                if (!is_wp_error($student_id_in_table)) {
+                    $student = $student_manager->get_student($student_id_in_table);
+                    error_log("Created missing student record for WP user ID: {$student_id}");
+                }
+            }
+            
+            // If still no student record, return error
+            if (!$student) {
+                wp_send_json_error(array('message' => __('Student not found in school system and could not be created.', 'school-manager-lite')));
+            }
         }
         
         $result = true;
