@@ -600,6 +600,7 @@ class School_Manager_Lite_Promo_Code_Manager {
             }
             
             // Check if student ID (password) already exists to prevent duplicates
+            // First check WordPress users meta
             $existing_user = get_users([
                 'meta_key' => '_school_student_id',
                 'meta_value' => $student_data['password'],
@@ -610,6 +611,16 @@ class School_Manager_Lite_Promo_Code_Manager {
             if (!empty($existing_user)) {
                 return new WP_Error('duplicate_student_id', __('A student with this ID already exists. Please use a different ID.', 'school-manager-lite'));
             }
+            
+            // Double check in the student table
+            global $wpdb;
+            $student_table = $wpdb->prefix . 'school_students';
+            $student_exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$student_table} WHERE student_id = %s", $student_data['password']));
+            if ($student_exists && $student_exists > 0) {
+                return new WP_Error('duplicate_student_id', __('A student with this ID already exists. Please use a different ID.', 'school-manager-lite'));
+            }
+            
+            // Phone number check can be skipped - student ID is the primary unique identifier
             
             // Add class ID from promo code
             $student_data['class_id'] = $promo->class_id;
@@ -641,11 +652,36 @@ class School_Manager_Lite_Promo_Code_Manager {
             $update_data['student_id'] = $student_id;
         }
         
-        // Update promo code
+        // Update promo code to mark it as used and link to the student
         $result = $this->update_promo_code($promo->id, $update_data);
         
         if (is_wp_error($result)) {
             return $result;
+        }
+        
+        // For single-use codes, explicitly mark it as used and ensure student is linked
+        if ($promo->usage_limit == 1) {
+            // Double-check to ensure the promo code is properly linked to this student
+            // This ensures the student shows up in the promo code table
+            global $wpdb;
+            $table_name = $wpdb->prefix . 'school_promo_codes';
+            $wpdb->update(
+                $table_name,
+                array(
+                    'student_id' => $student_id,
+                    'used_count' => 1,
+                    'used_at' => current_time('mysql'),
+                    'status' => 'used'
+                ),
+                array('id' => $promo->id),
+                array('%d', '%d', '%s', '%s'),
+                array('%d')
+            );
+            
+            // Also add promo code reference to student's user meta
+            if ($student_id) {
+                update_user_meta($student_id, 'school_promo_code', $promo->code);
+            }
         }
         
         // Get the class details

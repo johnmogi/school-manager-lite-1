@@ -330,9 +330,16 @@ class School_Manager_Lite_Admin {
             wp_die(__('Invalid file type requested.', 'school-manager-lite'));
         }
         
+        // Make sure Import/Export class is loaded
+        if (!class_exists('School_Manager_Lite_Import_Export')) {
+            require_once SCHOOL_MANAGER_LITE_PATH . 'includes/class-import-export.php';
+        }
+        
+        // Generate the sample CSV
         $import_export = School_Manager_Lite_Import_Export::instance();
         $import_export->generate_sample_csv($type);
         
+        // Safety exit - should not reach here
         wp_die();
     }
 
